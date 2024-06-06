@@ -132,45 +132,45 @@ module decoder import ariane_pkg::*; #(
         // Vector instructions never change control flow
         assign acc_is_control_flow_instr = 1'b0;
 
-        assign is_fs1 = core_v_xif_issue_resp_i.is_vfp && core_v_xif_issue_resp_i.register_read[0];
-        assign is_fs2 = core_v_xif_issue_resp_i.is_vfp && core_v_xif_issue_resp_i.register_read[1];
-        assign is_fd = core_v_xif_issue_resp_i.is_vfp && core_v_xif_issue_resp_i.writeback;
-
         always_comb begin
+            is_accel = '0;
+            is_fs1 = core_v_xif_issue_resp_i.is_vfp && core_v_xif_issue_resp_i.register_read[0];
+            is_fs2 = core_v_xif_issue_resp_i.is_vfp && core_v_xif_issue_resp_i.register_read[1];
+            is_fd = core_v_xif_issue_resp_i.is_vfp && core_v_xif_issue_resp_i.writeback;
             is_load  = instr.i_type.opcode == riscv::OpcodeLoadFp;
             is_store = instr.i_type.opcode == riscv::OpcodeStoreFp;
             acc_instruction   = '0;
             acc_illegal_instr = 1'b1;
 
+            if (issue_valid_i & issue_ready_i) begin
+                is_accel = core_v_xif_issue_resp_i.accept;
+                if (core_v_xif_issue_resp_i.accept && vs_i != riscv::Off) begin // trigger illegal instruction if the vector extension is turned off
+                  // TODO: Instruction going to other accelerators might need to distinguish whether the value of vs_i is needed or not.
+                  // Send accelerator instructions to the coprocessor
+                  acc_instruction.fu  = ACCEL;
+                  acc_instruction.vfp = core_v_xif_issue_resp_i.is_vfp;
+                  acc_instruction.rs1 = core_v_xif_issue_resp_i.register_read[0] ? instr_scalar.rtype.rs1 : {REG_ADDR_SIZE{1'b0}};
+                  acc_instruction.rs2 = core_v_xif_issue_resp_i.register_read[1] ? instr_scalar.rtype.rs2 : {REG_ADDR_SIZE{1'b0}};
+                  acc_instruction.rd  = core_v_xif_issue_resp_i.writeback ? instr_scalar.rtype.rd : {REG_ADDR_SIZE{1'b0}};
 
-            if (core_v_xif_issue_resp_i.accept && vs_i != riscv::Off) begin // trigger illegal instruction if the vector extension is turned off
-              // TODO: Instruction going to other accelerators might need to distinguish whether the value of vs_i is needed or not.
-              // Send accelerator instructions to the coprocessor
-              acc_instruction.fu  = ACCEL;
-              acc_instruction.vfp = core_v_xif_issue_resp_i.is_vfp;
-              acc_instruction.rs1 = core_v_xif_issue_resp_i.register_read[0] ? instr_scalar.rtype.rs1 : {REG_ADDR_SIZE{1'b0}};
-              acc_instruction.rs2 = core_v_xif_issue_resp_i.register_read[1] ? instr_scalar.rtype.rs2 : {REG_ADDR_SIZE{1'b0}};
-              acc_instruction.rd  = core_v_xif_issue_resp_i.writeback ? instr_scalar.rtype.rd : {REG_ADDR_SIZE{1'b0}};
+                  // Decode the vector operation
+                  unique case ({is_store, is_load, is_fs1, is_fs2, is_fd})
+                    5'b10000: acc_instruction.op = ACCEL_OP_STORE;
+                    5'b01000: acc_instruction.op = ACCEL_OP_LOAD;
+                    5'b00100: acc_instruction.op = ACCEL_OP_FS1;
+                    5'b00001: acc_instruction.op = ACCEL_OP_FD;
+                    5'b00000: acc_instruction.op = ACCEL_OP;
+                  endcase
 
-              // Decode the vector operation
-              unique case ({is_store, is_load, is_fs1, is_fs2, is_fd})
-                5'b10000: acc_instruction.op = ACCEL_OP_STORE;
-                5'b01000: acc_instruction.op = ACCEL_OP_LOAD;
-                5'b00100: acc_instruction.op = ACCEL_OP_FS1;
-                5'b00001: acc_instruction.op = ACCEL_OP_FD;
-                5'b00000: acc_instruction.op = ACCEL_OP;
-              endcase
+                  // Check that mstatus.FS is not OFF if we have a FP instruction for the accelerator
+                  acc_illegal_instr = (core_v_xif_issue_resp_i.is_vfp && (fs_i == riscv::Off)) ? 1'b1 : 1'b0;
 
-              // Check that mstatus.FS is not OFF if we have a FP instruction for the accelerator
-              acc_illegal_instr = (core_v_xif_issue_resp_i.is_vfp && (fs_i == riscv::Off)) ? 1'b1 : 1'b0;
-
-              // result holds the undecoded instruction
-              acc_instruction.result = { {riscv::XLEN-32{1'b0}}, instruction_i[31:0] };
-              acc_instruction.use_imm = 1'b0;
+                  // result holds the undecoded instruction
+                  acc_instruction.result = { {riscv::XLEN-32{1'b0}}, instruction_i[31:0] };
+                  acc_instruction.use_imm = 1'b0;
+                end
             end
         end
-
-        assign is_accel = core_v_xif_issue_resp_i.accept; //&& issue_ready_i && issue_valid_i
 
 
     end: gen_accel_decoder else begin

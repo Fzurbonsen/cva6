@@ -72,7 +72,7 @@ module id_stage #(
     logic                push_to_register;
 
 
-    assign core_v_xif_issue_valid_o = fetch_entry_valid_i && (!issue_q.valid || issue_instr_ack_i) && !flush_unissued_instr_i && !flush_i && cpu_illegal_instr;
+    assign core_v_xif_issue_valid_o = fetch_entry_valid_i && (!issue_q.valid || issue_instr_ack_i) && !flush_unissued_instr_i && !flush_i; // && cpu_illegal_instr
     assign push_to_register = cpu_illegal_instr ? core_v_xif_issue_ready_i : fetch_entry_valid_i && (!issue_q.valid || issue_instr_ack_i);
 
     // --------
