@@ -170,7 +170,7 @@ module decoder import ariane_pkg::*; #(
             end
         end
 
-        assign is_accel = core_v_xif_issue_resp_i.accept && issue_ready_i && issue_valid_i; //&& issue_ready_i && issue_valid_i
+        assign is_accel = core_v_xif_issue_resp_i.accept; //&& issue_ready_i && issue_valid_i
 
 
     end: gen_accel_decoder else begin
